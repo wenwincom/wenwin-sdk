@@ -420,6 +420,11 @@ class Lottery {
           convertNumbersToLotteryTicket(ticketNumbers, this.selectionSize, this.selectionMax),
         ),
       );
+
+      const rewardToken = await this.getRewardToken();
+      const ticketPrice = await this.getTicketPrice();
+      rewardToken.approve(this.contract.address, ticketPrice.mul(packedTickets.length));
+
       await this.contract.buyTickets(drawIds, packedTickets, frontend, referrer);
     } catch (error) {
       console.error(error);
