@@ -169,13 +169,31 @@ class Lottery {
   private contract: LotteryContract;
   private graphClient: GraphQLClient;
 
+  private rewardTokenAddress: string | null = null;
+  private firstDrawDate: Date | null = null;
+  private drawPeriodInMs: number | null = null;
+  private drawCoolDownPeriodInMs: number | null = null;
+  private ticketPrice: BigNumber | null = null;
+
   /**
    * Creates a lottery instance for the 7/35 lottery.
    * @param signerOrProvider The signer or provider to use for the contract.
    * @returns A lottery instance for the 7/35 lottery.
    */
-  public static lottery7_35(signerOrProvider: Signer | Provider): Lottery {
-    return new Lottery(7, 35, LOTTERY_7_35_ADDRESS, signerOrProvider, LOTTERY_7_35_GRAPH_URI);
+  public static async lottery7_35(signerOrProvider: Signer | Provider): Promise<Lottery> {
+    const lottery = new Lottery(7, 35, LOTTERY_7_35_ADDRESS, signerOrProvider, LOTTERY_7_35_GRAPH_URI);
+
+    try {
+      lottery.rewardTokenAddress = await lottery.contract.rewardToken();
+      lottery.firstDrawDate = new Date((await lottery.contract.drawScheduledAt(0)).toNumber() * 1000);
+      lottery.drawPeriodInMs = (await lottery.contract.drawPeriod()).toNumber() * 1000;
+      lottery.drawCoolDownPeriodInMs = (await lottery.contract.drawCoolDownPeriod()).toNumber() * 1000;
+      lottery.ticketPrice = await lottery.contract.ticketPrice();
+    } catch (e) {
+      console.error(e);
+    }
+
+    return lottery;
   }
 
   /**
@@ -205,7 +223,7 @@ class Lottery {
    */
   public async getRewardToken(): Promise<ERC20> {
     try {
-      const tokenAddress = await this.contract.rewardToken();
+      const tokenAddress = this.rewardTokenAddress ?? (await this.contract.rewardToken());
       return ERC20__factory.connect(tokenAddress, this.contract.signer || this.contract.provider);
     } catch (error) {
       console.error(error);
@@ -219,7 +237,7 @@ class Lottery {
    */
   public async getTicketPrice(): Promise<BigNumber> {
     try {
-      return await this.contract.ticketPrice();
+      return this.ticketPrice ?? (await this.contract.ticketPrice());
     } catch (error) {
       console.error(error);
       return Promise.reject(error);
@@ -347,6 +365,12 @@ class Lottery {
    */
   public async getDrawScheduledDate(drawId: PromiseOrValue<BigNumberish>): Promise<Date> {
     try {
+      if (this.firstDrawDate && this.drawPeriodInMs) {
+        const resolvedDrawId = BigNumber.from(await Promise.resolve(drawId)).toNumber();
+        const scheduledTimestamp = this.firstDrawDate.getTime() + resolvedDrawId * this.drawPeriodInMs;
+        return new Date(scheduledTimestamp);
+      }
+
       const timestampInSecond = await this.contract.drawScheduledAt(drawId);
       const timestampInMillisecond = timestampInSecond.toNumber() * 1000;
       return new Date(timestampInMillisecond);
@@ -363,6 +387,11 @@ class Lottery {
    */
   public async getTicketRegistrationDeadline(drawId: PromiseOrValue<BigNumberish>): Promise<Date> {
     try {
+      if (this.firstDrawDate && this.drawPeriodInMs && this.drawCoolDownPeriodInMs) {
+        const timestamp = (await this.getDrawScheduledDate(drawId)).getTime() - this.drawCoolDownPeriodInMs;
+        return new Date(timestamp);
+      }
+
       const timestampInSecond = await this.contract.ticketRegistrationDeadline(drawId);
       const timestampInMillisecond = timestampInSecond.toNumber() * 1000;
       return new Date(timestampInMillisecond);
