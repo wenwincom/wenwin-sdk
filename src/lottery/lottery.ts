@@ -17,10 +17,16 @@ type LotteryTierWinnersCount = {
   [tier: number]: number;
 };
 
+type LotteryTierPrizes = {
+  [tier: number]: BigNumber;
+};
+
 export interface LotteryDrawInfo {
   drawId: number;
+  scheduledDate: Date;
   winningCombination: Ticket;
-  jackpotSize: BigNumber;
+  numberOfWinnersPerTier: LotteryTierWinnersCount;
+  prizesPerTier: LotteryTierPrizes;
 }
 
 /**
@@ -134,7 +140,7 @@ export class LotteryTicketHistory {
       return 'claimed';
     }
 
-    if (this.draw + LotteryTicketHistory.DRAWS_PER_YEAR > currentDraw) {
+    if (this.draw + LotteryTicketHistory.DRAWS_PER_YEAR < currentDraw) {
       return 'expired';
     }
 
@@ -166,6 +172,7 @@ class Lottery {
 
   public readonly selectionSize: number;
   public readonly selectionMax: number;
+  public readonly swapWinTier: number;
   private contract: LotteryContract;
   private graphClient: GraphQLClient;
 
@@ -181,7 +188,7 @@ class Lottery {
    * @returns A lottery instance for the 7/35 lottery.
    */
   public static async lottery7_35(signerOrProvider: Signer | Provider): Promise<Lottery> {
-    const lottery = new Lottery(7, 35, LOTTERY_7_35_ADDRESS, signerOrProvider, LOTTERY_7_35_GRAPH_URI);
+    const lottery = new Lottery(7, 35, 3, LOTTERY_7_35_ADDRESS, signerOrProvider, LOTTERY_7_35_GRAPH_URI);
 
     try {
       lottery.rewardTokenAddress = await lottery.contract.rewardToken();
@@ -200,6 +207,7 @@ class Lottery {
    * Creates a lottery instance for the `selectionSize`/`selectionMax` lottery.
    * @param selectionSize The number of numbers to select.
    * @param selectionMax The maximum number that can be selected.
+   * @param swapWinTier The win tier at which the prize is equal to the ticket size (lowest awarded win tier).
    * @param address The address of the lottery contract.
    * @param signerOrProvider The signer or provider to use for the contract.
    * @param graphUri The URI of the lottery subgraph.
@@ -207,12 +215,14 @@ class Lottery {
   private constructor(
     selectionSize: number,
     selectionMax: number,
+    swapWinTier: number,
     address: string,
     signerOrProvider: Signer | Provider,
     graphUri: string,
   ) {
     this.selectionSize = selectionSize;
     this.selectionMax = selectionMax;
+    this.swapWinTier = swapWinTier;
     this.contract = Lottery__factory.connect(address, signerOrProvider);
     this.graphClient = new GraphQLClient(graphUri);
   }
@@ -259,35 +269,50 @@ class Lottery {
   }
 
   /**
-   * Returns winning tickets and jackpot sizes for given draws. If a draw info is not available, it will not add it to
-   * the returned list. The function keeps the order of the draw IDs.
+   * Returns draw info (ID, draw date, winning combination, number of winners per tier and tier prizes) for given draws.
+   * If a draw info is not available, it will not add it to the returned list. The function keeps the order of the draw
+   * IDs.
    * @param drawIds The IDs of the draws.
    * @returns The draws' information.
    */
-  public async getDrawInfos(drawIds: PromiseOrValue<BigNumberish[]>): Promise<LotteryDrawInfo[]> {
+  public async getDrawInfos(drawIds: PromiseOrValue<BigNumberish | BigNumberish[]>): Promise<LotteryDrawInfo[]> {
     const resolvedDrawIds = await Promise.resolve(drawIds);
+    const checkedDrawIds = Array.isArray(resolvedDrawIds) ? resolvedDrawIds : [resolvedDrawIds];
     const data = await this.graphClient.request(
       gql`
         query getWinningTicket($drawIds: [ID!]!) {
           draws(where: { id_in: $drawIds }) {
             id
-            jackpotSize
+            scheduledTimestamp
             winningTicket
+            numberOfWinnersPerTier
+            prizesPerTier
           }
         }
       `,
       {
-        drawIds: resolvedDrawIds.map(drawId => drawId.toString()),
+        drawIds: checkedDrawIds.map(drawId => drawId.toString()),
       },
     );
 
-    return data.draws.map((draw: any) => ({
-      drawId: parseInt(draw.id),
-      jackpotSize: BigNumber.from(draw.jackpotSize),
-      winningTicket: draw.winningTicket
-        ? convertLotteryTicketToNumbers(BigNumber.from(draw.winningTicket), this.selectionMax)
-        : null,
-    }));
+    return data.draws.map(
+      (draw: any) =>
+        ({
+          drawId: parseInt(draw.id),
+          scheduledDate: new Date(draw.scheduledTimestamp * 1000),
+          numberOfWinnersPerTier: this.convertArrayToWinTierMap<number, LotteryTierWinnersCount>(
+            draw.numberOfWinnersPerTier,
+            Number,
+          ),
+          prizesPerTier: this.convertArrayToWinTierMap<BigNumber, LotteryTierPrizes>(
+            draw.prizesPerTier,
+            BigNumber.from,
+          ),
+          winningCombination: draw.winningTicket
+            ? convertLotteryTicketToNumbers(BigNumber.from(draw.winningTicket), this.selectionMax)
+            : null,
+        } as LotteryDrawInfo),
+    );
   }
 
   /**
@@ -296,14 +321,35 @@ class Lottery {
    * @param winTier The win tier (in the range [0, `selectionSize`]).
    * @returns The winning amount (in reward token's precision).
    */
-  public async getWinAmount(drawId: PromiseOrValue<BigNumberish>, winTier: PromiseOrValue<number>): Promise<BigNumber> {
+  public async getWinAmount(
+    drawId: PromiseOrValue<BigNumberish>,
+    winTier: PromiseOrValue<number>,
+  ): Promise<BigNumber | null> {
     try {
       const resolvedWinTier = await Promise.resolve(winTier);
-      if (resolvedWinTier < 0 || resolvedWinTier > this.selectionSize) {
-        throw new Error(`Win tier must be between 0 and ${this.selectionSize}`);
+      if (resolvedWinTier < this.swapWinTier || resolvedWinTier > this.selectionSize) {
+        throw new Error(`Win tier must be between ${this.swapWinTier} and ${this.selectionSize}`);
       }
 
-      return await this.contract.winAmount(drawId, resolvedWinTier);
+      const resolvedDrawId = await Promise.resolve(drawId);
+      const data = await this.graphClient.request(
+        gql`
+          query getWinningTicket($drawId: ID!) {
+            draw(id: $drawId) {
+              prizesPerTier
+            }
+          }
+        `,
+        {
+          drawId: resolvedDrawId.toString(),
+        },
+      );
+
+      if (!data.draw?.prizesPerTier) {
+        return null;
+      }
+
+      return this.convertArrayToWinTierMap(data.draw.prizesPerTier, BigNumber.from)[resolvedWinTier] ?? null;
     } catch (error) {
       console.error(error);
       return Promise.reject(error);
@@ -568,13 +614,7 @@ class Lottery {
         return null;
       }
 
-      const numberOfWinnersPerTier: string[] = data.draw.numberOfWinnersPerTier;
-      const swapWinTier = this.selectionSize - numberOfWinnersPerTier.length + 1;
-      return numberOfWinnersPerTier.reduce((acc, cur, idx) => {
-        const winTier = swapWinTier + idx;
-        acc[winTier] = Number(cur);
-        return acc;
-      }, {} as LotteryTierWinnersCount);
+      return this.convertArrayToWinTierMap<number, LotteryTierWinnersCount>(data.draw.numberOfWinnersPerTier, Number);
     } catch (error) {
       console.error(error);
       return Promise.reject(error);
@@ -586,32 +626,8 @@ class Lottery {
    * @param drawId The ID of the draw.
    * @returns The jackpot size (in reward token's precision).
    */
-  public async getJackpotSize(drawId: PromiseOrValue<BigNumberish>): Promise<BigNumber> {
-    try {
-      const resolvedDrawId = await Promise.resolve(drawId);
-      const data = await this.graphClient.request(
-        gql`
-          query getJackpotSize($drawId: ID!) {
-            draw(id: $drawId) {
-              jackpotSize
-            }
-          }
-        `,
-        {
-          drawId: resolvedDrawId.toString(),
-        },
-      );
-
-      // If the jackpot for the draw is not found, retrieve the jackpot for the current draw
-      if (data.draw === null) {
-        return this.getDrawRewardSize(resolvedDrawId, this.selectionSize);
-      }
-
-      return BigNumber.from(data.draw.jackpotSize);
-    } catch (error) {
-      console.error(error);
-      return Promise.reject(error);
-    }
+  public async getJackpotSize(drawId: PromiseOrValue<BigNumberish>): Promise<BigNumber | null> {
+    return this.getWinAmount(drawId, this.selectionSize);
   }
 
   public async getNumberOfPlayers(drawId: PromiseOrValue<BigNumberish>): Promise<number> {
@@ -727,6 +743,19 @@ class Lottery {
     }
 
     return bonusMulti;
+  }
+
+  private convertArrayToWinTierMap<T, M extends { [key: number]: T }>(array: string[], mapFn: (value: string) => T): M {
+    const startingIndex = this.selectionSize - array.length + 1;
+    return array.reduce((accumulator, current, index) => {
+      const winTier = startingIndex + index;
+      if (winTier < this.swapWinTier) {
+        return accumulator;
+      }
+
+      accumulator[winTier] = mapFn(current);
+      return accumulator;
+    }, {} as M);
   }
 }
 
