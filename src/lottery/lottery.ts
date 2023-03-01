@@ -152,7 +152,7 @@ export class LotteryTicketHistory {
  * @property ticketNumbers The numbers on the ticket.
  */
 interface LotteryTicketForDraw {
-  drawId: PromiseOrValue<BigNumber>;
+  drawId: PromiseOrValue<number>;
   ticketNumbers: PromiseOrValue<Ticket>;
 }
 
