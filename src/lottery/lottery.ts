@@ -109,9 +109,9 @@ export class LotteryTicketHistory {
   }
 
   /**
-   * Whether the ticket is a winning ticket. This is only available if the draw has already been finalized.
+   * Whether the ticket is a jackpot winning ticket. This is only available if the draw has already been finalized.
    */
-  public get isWinningTicket(): boolean {
+  public get isJackpotWinningTicket(): boolean {
     return this.winTier !== null && this.winTier === this.combination.size;
   }
 
