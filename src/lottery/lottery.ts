@@ -89,7 +89,7 @@ export class LotteryTicketHistory {
     combination: Ticket,
     isClaimed: boolean,
     calculateReward: (winTier: number) => Promise<BigNumber>,
-    drawWinningCombination?: Ticket,
+    drawWinningCombination: Ticket | null,
   ) {
     this.ticketId = ticketId;
     this.draw = draw;
@@ -484,9 +484,15 @@ class Lottery {
           const ticketId = BigNumber.from(ticket.id);
           const drawId = Number(ticket.draw);
           const combination = convertLotteryTicketToNumbers(BigNumber.from(ticket.combination), this.selectionMax);
+          const winningCombinationForDraw = await this.getWinningTicket(drawId);
 
-          return new LotteryTicketHistory(ticketId, drawId, combination, ticket.isClaimed, tier =>
-            this.contract.winAmount(drawId, tier),
+          return new LotteryTicketHistory(
+            ticketId,
+            drawId,
+            combination,
+            ticket.isClaimed,
+            tier => this.contract.winAmount(drawId, tier),
+            winningCombinationForDraw,
           );
         }),
       );
