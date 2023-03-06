@@ -1,5 +1,5 @@
 import type { Provider } from '@ethersproject/providers';
-import { BigNumber, BigNumberish, Signer } from 'ethers';
+import { BigNumber, BigNumberish, Signer, utils } from 'ethers';
 import { gql, GraphQLClient } from 'graphql-request';
 import { LOTTERY_7_35_ADDRESS, LOTTERY_7_35_GRAPH_URI, ZERO } from '../constants';
 import { ERC20, ERC20__factory, Lottery as LotteryContract, Lottery__factory } from '../typechain';
@@ -460,7 +460,9 @@ class Lottery {
   ) {
     try {
       const checkedTicketsForDraws = Array.isArray(ticketsForDraws) ? ticketsForDraws : [ticketsForDraws];
-      const drawIds = checkedTicketsForDraws.map(ticketForDraw => ticketForDraw.drawId);
+      const drawIds = checkedTicketsForDraws.map(ticketForDraw =>
+        Promise.resolve(ticketForDraw.drawId).then(drawId => utils.parseEther(drawId.toString())),
+      );
       const packedTickets = checkedTicketsForDraws.map(ticketForDraw =>
         Promise.resolve(ticketForDraw.ticketNumbers).then(ticketNumbers =>
           convertNumbersToLotteryTicket(ticketNumbers, this.selectionSize, this.selectionMax),
@@ -469,9 +471,16 @@ class Lottery {
 
       const rewardToken = await this.getRewardToken();
       const ticketPrice = await this.getTicketPrice();
-      rewardToken.approve(this.contract.address, ticketPrice.mul(packedTickets.length));
+      const allowance = await rewardToken.allowance(this.contract.signer.getAddress(), this.contract.address);
+      const totalTicketPrice = ticketPrice.mul(checkedTicketsForDraws.length);
 
-      await this.contract.buyTickets(drawIds, packedTickets, frontend, referrer);
+      if (allowance.lt(totalTicketPrice)) {
+        const approveTx = await rewardToken.approve(this.contract.address, ticketPrice.mul(packedTickets.length));
+        await approveTx.wait();
+      }
+
+      const buyTicketsTx = await this.contract.buyTickets(drawIds, packedTickets, frontend, referrer);
+      await buyTicketsTx.wait();
     } catch (error) {
       console.error(error);
       return Promise.reject(error);
