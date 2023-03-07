@@ -79,6 +79,7 @@ export class LotteryTicketHistory {
 
   private readonly isClaimed: boolean;
   private readonly calculateReward: (winTier: number) => Promise<BigNumber>;
+  private readonly lotterySwapWinTier: number;
 
   /**
    * Creates a lottery ticket history instance.
@@ -88,6 +89,7 @@ export class LotteryTicketHistory {
    * @param isClaimed Whether the ticket has been claimed.
    * @param calculateReward A function that calculates the reward for a given win tier.
    * @param drawWinningCombination The winning combination for the draw.
+   * @param lotterySwapWinTier The minimum win tier for which the reward is paid in the lottery.
    */
   constructor(
     ticketId: BigNumber,
@@ -96,6 +98,7 @@ export class LotteryTicketHistory {
     isClaimed: boolean,
     calculateReward: (winTier: number) => Promise<BigNumber>,
     drawWinningCombination: Ticket | null,
+    lotterySwapWinTier: number,
   ) {
     this.ticketId = ticketId;
     this.draw = draw;
@@ -105,6 +108,7 @@ export class LotteryTicketHistory {
       : null;
     this.isClaimed = isClaimed;
     this.calculateReward = calculateReward;
+    this.lotterySwapWinTier = lotterySwapWinTier;
   }
 
   /**
@@ -144,7 +148,7 @@ export class LotteryTicketHistory {
       return 'expired';
     }
 
-    if (this.winTier !== null && this.winTier > 0) {
+    if (this.winTier !== null && this.winTier >= this.lotterySwapWinTier) {
       return 'unclaimed';
     }
 
@@ -548,6 +552,7 @@ class Lottery {
             ticket.isClaimed,
             tier => this.contract.winAmount(drawId, tier),
             winningCombinationForDraw,
+            this.swapWinTier,
           );
         }),
       );
