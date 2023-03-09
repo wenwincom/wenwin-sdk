@@ -136,7 +136,7 @@ export class LotteryTicketHistory {
    * Returns whether the ticket has been claimed.
    */
   public getStatus(currentDraw: number): LotteryTicketStatus {
-    if (this.draw >= currentDraw) {
+    if (this.draw >= currentDraw || this.winTier === null) {
       return 'active';
     }
 
@@ -144,15 +144,15 @@ export class LotteryTicketHistory {
       return 'claimed';
     }
 
+    if (this.winTier < this.lotterySwapWinTier) {
+      return 'unclaimable';
+    }
+
     if (this.draw + LotteryTicketHistory.DRAWS_PER_YEAR < currentDraw) {
       return 'expired';
     }
 
-    if (this.winTier !== null && this.winTier >= this.lotterySwapWinTier) {
-      return 'unclaimed';
-    }
-
-    return 'unclaimable';
+    return 'unclaimed';
   }
 }
 
@@ -286,7 +286,7 @@ class Lottery {
       gql`
         query getWinningTicket($drawIds: [ID!]!) {
           draws(where: { id_in: $drawIds }) {
-            id
+            drawId
             scheduledTimestamp
             winningTicket
             numberOfWinnersPerTier
@@ -295,14 +295,14 @@ class Lottery {
         }
       `,
       {
-        drawIds: checkedDrawIds.map(drawId => drawId.toString()),
+        drawIds: checkedDrawIds.map(drawId => `${this.contract.address.toLowerCase()}_${drawId.toString()}`),
       },
     );
 
     return data.draws.map(
       (draw: any) =>
         ({
-          drawId: parseInt(draw.id),
+          drawId: parseInt(draw.drawId),
           scheduledDate: new Date(draw.scheduledTimestamp * 1000),
           numberOfWinnersPerTier: this.convertArrayToWinTierMap<number, LotteryTierWinnersCount>(
             draw.numberOfWinnersPerTier,
@@ -345,7 +345,7 @@ class Lottery {
           }
         `,
         {
-          drawId: resolvedDrawId.toString(),
+          drawId: `${this.contract.address.toLowerCase()}_${resolvedDrawId.toString()}`,
         },
       );
 
@@ -377,7 +377,7 @@ class Lottery {
           }
         `,
         {
-          drawId: resolvedDrawId.toString(),
+          drawId: `${this.contract.address.toLowerCase()}_${resolvedDrawId.toString()}`,
         },
       );
 
@@ -518,10 +518,13 @@ class Lottery {
       const data = await this.graphClient.request(
         gql`
           query getTickets($player: ID!, $skip: Int!, $limit: Int) {
-            tickets(orderBy: "draw", first: $limit, skip: $skip, where: { owner: $player }) {
-              id
+            tickets(orderBy: "ticketId", first: $limit, skip: $skip, where: { owner: $player }) {
+              ticketId
               owner
-              draw
+              draw {
+                drawId
+                winningTicket
+              }
               combination
               isClaimed
             }
@@ -540,10 +543,12 @@ class Lottery {
 
       return Promise.all(
         data.tickets.map(async (ticket: any) => {
-          const ticketId = BigNumber.from(ticket.id);
-          const drawId = Number(ticket.draw);
+          const ticketId = BigNumber.from(ticket.ticketId);
+          const drawId = Number(ticket.draw.drawId);
           const combination = convertLotteryTicketToNumbers(BigNumber.from(ticket.combination), this.selectionMax);
-          const winningCombinationForDraw = await this.getWinningTicket(drawId);
+          const winningCombinationForDraw = ticket.draw.winningTicket
+            ? convertLotteryTicketToNumbers(BigNumber.from(ticket.draw.winningTicket), this.selectionMax)
+            : null;
 
           return new LotteryTicketHistory(
             ticketId,
@@ -581,7 +586,8 @@ class Lottery {
 
       const resolvedDrawId = Promise.resolve(drawId);
       const packedTicket = convertUncheckedNumbersToLotteryTicket(combination);
-      const combinationId = `${resolvedDrawId.toString()}_${packedTicket.toHexString()}`;
+      const contractAddress = this.contract.address.toLowerCase();
+      const combinationId = `${contractAddress}_${resolvedDrawId.toString()}_${packedTicket.toHexString()}`;
       const data = await this.graphClient.request(
         gql`
           query getNumberOfTicketCombinations($combinationId: ID!) {
@@ -620,7 +626,7 @@ class Lottery {
           }
         `,
         {
-          drawId: resolvedDrawId.toString(),
+          drawId: `${this.contract.address.toLowerCase()}_${resolvedDrawId.toString()}`,
         },
       );
 
@@ -644,7 +650,12 @@ class Lottery {
     return this.getWinAmount(drawId, this.selectionSize);
   }
 
-  public async getNumberOfPlayers(drawId: PromiseOrValue<BigNumberish>): Promise<number> {
+  /**
+   * Returns the number of players that have registered tickets for a given draw.
+   * @param drawId The ID of the draw.
+   * @returns The number of players for the draw.
+   */
+  public async getNumberOfPlayers(drawId: PromiseOrValue<BigNumberish>): Promise<number | null> {
     try {
       const resolvedDrawId = await Promise.resolve(drawId);
       const data = await this.graphClient.request(
@@ -656,11 +667,11 @@ class Lottery {
           }
         `,
         {
-          drawId: resolvedDrawId.toString(),
+          drawId: `${this.contract.address.toLowerCase()}_${resolvedDrawId.toString()}`,
         },
       );
 
-      return data.draw ? Number(data.draw.numberOfPlayers) : 0;
+      return data.draw ? Number(data.draw.numberOfPlayers) : null;
     } catch (error) {
       console.error(error);
       return Promise.reject(error);
@@ -703,10 +714,23 @@ class Lottery {
    * @param drawId The ID of the draw.
    * @returns The number of tickets sold.
    */
-  public async getSoldTickets(drawId: PromiseOrValue<BigNumberish>): Promise<number> {
+  public async getSoldTickets(drawId: PromiseOrValue<BigNumberish>): Promise<number | null> {
     try {
-      const soldTicketsBN = await this.contract.ticketsSold(drawId);
-      return soldTicketsBN.toNumber();
+      const resolvedDrawId = await Promise.resolve(drawId);
+      const data = await this.graphClient.request(
+        gql`
+          query getNumberOfPlayers($drawId: ID!) {
+            draw(id: $drawId) {
+              numberOfSoldTickets
+            }
+          }
+        `,
+        {
+          drawId: `${this.contract.address.toLowerCase()}_${resolvedDrawId.toString()}`,
+        },
+      );
+
+      return data.draw ? Number(data.draw.numberOfSoldTickets) : null;
     } catch (error) {
       console.error(error);
       return Promise.reject(error);

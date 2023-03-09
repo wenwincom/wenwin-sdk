@@ -61,13 +61,18 @@
         "type": "tuple"
       },
       {
-        "internalType": "contract ILotteryToken",
-        "name": "lotteryToken",
-        "type": "address"
+        "internalType": "uint256",
+        "name": "playerRewardFirstDraw",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "playerRewardDecreasePerDraw",
+        "type": "uint256"
       },
       {
         "internalType": "uint256[]",
-        "name": "percentageRewardsToPlayers",
+        "name": "rewardsToReferrersPerDraw",
         "type": "uint256[]"
       },
       {
@@ -183,11 +188,6 @@
   },
   {
     "inputs": [],
-    "name": "LotteryTokenIsZeroAddress",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "MaxFailedAttemptsTooBig",
     "type": "error"
   },
@@ -214,16 +214,6 @@
   },
   {
     "inputs": [],
-    "name": "PercentageRewardsCannotBeZeroLength",
-    "type": "error"
-  },
-  {
-    "inputs": [],
-    "name": "PercentageRewardsIsGreaterThanHundredPercent",
-    "type": "error"
-  },
-  {
-    "inputs": [],
     "name": "PreviousRequestNotFulfilled",
     "type": "error"
   },
@@ -246,6 +236,11 @@
   {
     "inputs": [],
     "name": "RandomNumberFulfillmentUnauthorized",
+    "type": "error"
+  },
+  {
+    "inputs": [],
+    "name": "ReferrerRewardsInvalid",
     "type": "error"
   },
   {
@@ -517,27 +512,22 @@
         "type": "address"
       },
       {
-        "components": [
-          {
-            "internalType": "uint256",
-            "name": "firstDrawScheduledAt",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "drawPeriod",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "drawCoolDownPeriod",
-            "type": "uint256"
-          }
-        ],
         "indexed": true,
-        "internalType": "struct LotteryDrawSchedule",
-        "name": "drawSchedule",
-        "type": "tuple"
+        "internalType": "uint256",
+        "name": "firstDrawScheduledAt",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "drawPeriod",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "drawCoolDownPeriod",
+        "type": "uint256"
       },
       {
         "indexed": false,
@@ -1200,19 +1190,6 @@
   },
   {
     "inputs": [],
-    "name": "lotteryToken",
-    "outputs": [
-      {
-        "internalType": "contract ILotteryToken",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
     "name": "maxFailedAttempts",
     "outputs": [
       {
@@ -1297,6 +1274,19 @@
   },
   {
     "inputs": [],
+    "name": "nativeToken",
+    "outputs": [
+      {
+        "internalType": "contract IERC20",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
     "name": "nextTicketId",
     "outputs": [
       {
@@ -1367,14 +1357,21 @@
     "type": "function"
   },
   {
-    "inputs": [
+    "inputs": [],
+    "name": "playerRewardDecreasePerDraw",
+    "outputs": [
       {
         "internalType": "uint256",
         "name": "",
         "type": "uint256"
       }
     ],
-    "name": "percentageRewardsToPlayers",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "playerRewardFirstDraw",
     "outputs": [
       {
         "internalType": "uint256",
@@ -1445,6 +1442,25 @@
         "internalType": "contract IERC20",
         "name": "",
         "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "rewardsToReferrersPerDraw",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",
