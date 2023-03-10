@@ -1,7 +1,7 @@
 import type { Provider } from '@ethersproject/providers';
 import { BigNumber, BigNumberish, Signer, utils } from 'ethers';
 import { gql, GraphQLClient } from 'graphql-request';
-import { LOTTERY_7_35_ADDRESS, LOTTERY_7_35_GRAPH_URI, ZERO } from '../constants';
+import { LOTTERY_7_35_CONFIG, ZERO } from '../constants';
 import { ERC20, ERC20__factory, Lottery as LotteryContract, Lottery__factory } from '../typechain';
 import { PromiseOrValue } from '../typechain/common';
 import {
@@ -12,6 +12,7 @@ import {
   Ticket,
   Tickets,
 } from '../utils';
+import { LotteryConfig } from './config';
 
 type LotteryTierWinnersCount = {
   [tier: number]: number;
@@ -177,85 +178,44 @@ class Lottery {
   public readonly selectionSize: number;
   public readonly selectionMax: number;
   public readonly swapWinTier: number;
+  public readonly rewardToken: ERC20;
+  public readonly rewardTokenSymbol: string;
+  public readonly rewardTokenDecimals: number;
+  public readonly ticketPrice: BigNumber;
+
   private contract: LotteryContract;
   private graphClient: GraphQLClient;
-
-  private rewardTokenAddress: string | null = null;
-  private firstDrawDate: Date | null = null;
-  private drawPeriodInMs: number | null = null;
-  private drawCoolDownPeriodInMs: number | null = null;
-  private ticketPrice: BigNumber | null = null;
+  private firstDrawDate: Date;
+  private drawPeriodInMs: number;
+  private drawCoolDownPeriodInMs: number;
 
   /**
    * Creates a lottery instance for the 7/35 lottery.
    * @param signerOrProvider The signer or provider to use for the contract.
    * @returns A lottery instance for the 7/35 lottery.
    */
-  public static async lottery7_35(signerOrProvider: Signer | Provider): Promise<Lottery> {
-    const lottery = new Lottery(7, 35, 3, LOTTERY_7_35_ADDRESS, signerOrProvider, LOTTERY_7_35_GRAPH_URI);
-
-    try {
-      lottery.rewardTokenAddress = await lottery.contract.rewardToken();
-      lottery.firstDrawDate = new Date((await lottery.contract.drawScheduledAt(0)).toNumber() * 1000);
-      lottery.drawPeriodInMs = (await lottery.contract.drawPeriod()).toNumber() * 1000;
-      lottery.drawCoolDownPeriodInMs = (await lottery.contract.drawCoolDownPeriod()).toNumber() * 1000;
-      lottery.ticketPrice = await lottery.contract.ticketPrice();
-    } catch (e) {
-      console.error(e);
-    }
-
-    return lottery;
+  public static lottery7_35(signerOrProvider: Signer | Provider): Lottery {
+    return new Lottery(LOTTERY_7_35_CONFIG, signerOrProvider);
   }
 
   /**
-   * Creates a lottery instance for the `selectionSize`/`selectionMax` lottery.
-   * @param selectionSize The number of numbers to select.
-   * @param selectionMax The maximum number that can be selected.
-   * @param swapWinTier The win tier at which the prize is equal to the ticket size (lowest awarded win tier).
-   * @param address The address of the lottery contract.
+   * Creates a lottery instance for the `config.selectionSize`/`config.selectionMax` lottery.
+   * @param config The lottery configuration.
    * @param signerOrProvider The signer or provider to use for the contract.
-   * @param graphUri The URI of the lottery subgraph.
    */
-  private constructor(
-    selectionSize: number,
-    selectionMax: number,
-    swapWinTier: number,
-    address: string,
-    signerOrProvider: Signer | Provider,
-    graphUri: string,
-  ) {
-    this.selectionSize = selectionSize;
-    this.selectionMax = selectionMax;
-    this.swapWinTier = swapWinTier;
-    this.contract = Lottery__factory.connect(address, signerOrProvider);
-    this.graphClient = new GraphQLClient(graphUri);
-  }
-
-  /**
-   * Returns the ERC-20 token used as the reward token.
-   * @returns The lottery's reward token.
-   */
-  public async getRewardToken(): Promise<ERC20> {
-    try {
-      const tokenAddress = this.rewardTokenAddress ?? (await this.contract.rewardToken());
-      return ERC20__factory.connect(tokenAddress, this.contract.signer || this.contract.provider);
-    } catch (error) {
-      console.error(error);
-      return Promise.reject(error);
-    }
-  }
-
-  /**
-   * Returns the ticket price in the reward token.
-   * @returns The ticket price (in reward token's precision).
-   */
-  public async getTicketPrice(): Promise<BigNumber> {
-    try {
-      return this.ticketPrice ?? (await this.contract.ticketPrice());
-    } catch (error) {
-      console.error(error);
-      return Promise.reject(error);
-    }
+  private constructor(config: LotteryConfig, signerOrProvider: Signer | Provider) {
+    this.selectionSize = config.selectionSize;
+    this.selectionMax = config.selectionMax;
+    this.swapWinTier = config.minWinningTier;
+    this.contract = Lottery__factory.connect(config.contractAddress, signerOrProvider);
+    this.graphClient = new GraphQLClient(config.subgraphUri);
+    this.rewardToken = ERC20__factory.connect(config.contractAddress, signerOrProvider);
+    this.rewardTokenSymbol = config.rewardTokenSymbol;
+    this.rewardTokenDecimals = config.rewardTokenDecimals;
+    this.firstDrawDate = new Date(config.firstDrawTimestamp * 1000);
+    this.drawPeriodInMs = config.drawPeriod * 1000;
+    this.drawCoolDownPeriodInMs = config.drawCoolDownPeriod * 1000;
+    this.ticketPrice = config.ticketPrice;
   }
 
   /**
@@ -415,15 +375,9 @@ class Lottery {
    */
   public async getDrawScheduledDate(drawId: PromiseOrValue<BigNumberish>): Promise<Date> {
     try {
-      if (this.firstDrawDate && this.drawPeriodInMs) {
-        const resolvedDrawId = BigNumber.from(await Promise.resolve(drawId)).toNumber();
-        const scheduledTimestamp = this.firstDrawDate.getTime() + resolvedDrawId * this.drawPeriodInMs;
-        return new Date(scheduledTimestamp);
-      }
-
-      const timestampInSecond = await this.contract.drawScheduledAt(drawId);
-      const timestampInMillisecond = timestampInSecond.toNumber() * 1000;
-      return new Date(timestampInMillisecond);
+      const resolvedDrawId = BigNumber.from(await Promise.resolve(drawId)).toNumber();
+      const scheduledTimestamp = this.firstDrawDate.getTime() + resolvedDrawId * this.drawPeriodInMs;
+      return new Date(scheduledTimestamp);
     } catch (error) {
       console.error(error);
       return Promise.reject(error);
@@ -437,14 +391,8 @@ class Lottery {
    */
   public async getTicketRegistrationDeadline(drawId: PromiseOrValue<BigNumberish>): Promise<Date> {
     try {
-      if (this.firstDrawDate && this.drawPeriodInMs && this.drawCoolDownPeriodInMs) {
-        const timestamp = (await this.getDrawScheduledDate(drawId)).getTime() - this.drawCoolDownPeriodInMs;
-        return new Date(timestamp);
-      }
-
-      const timestampInSecond = await this.contract.ticketRegistrationDeadline(drawId);
-      const timestampInMillisecond = timestampInSecond.toNumber() * 1000;
-      return new Date(timestampInMillisecond);
+      const timestamp = (await this.getDrawScheduledDate(drawId)).getTime() - this.drawCoolDownPeriodInMs;
+      return new Date(timestamp);
     } catch (error) {
       console.error(error);
       return Promise.reject(error);
@@ -473,13 +421,14 @@ class Lottery {
         ),
       );
 
-      const rewardToken = await this.getRewardToken();
-      const ticketPrice = await this.getTicketPrice();
-      const allowance = await rewardToken.allowance(this.contract.signer.getAddress(), this.contract.address);
-      const totalTicketPrice = ticketPrice.mul(checkedTicketsForDraws.length);
+      const allowance = await this.rewardToken.allowance(this.contract.signer.getAddress(), this.contract.address);
+      const totalTicketPrice = this.ticketPrice.mul(checkedTicketsForDraws.length);
 
       if (allowance.lt(totalTicketPrice)) {
-        const approveTx = await rewardToken.approve(this.contract.address, ticketPrice.mul(packedTickets.length));
+        const approveTx = await this.rewardToken.approve(
+          this.contract.address,
+          this.ticketPrice.mul(packedTickets.length),
+        );
         await approveTx.wait();
       }
 
@@ -584,7 +533,7 @@ class Lottery {
         );
       }
 
-      const resolvedDrawId = Promise.resolve(drawId);
+      const resolvedDrawId = await Promise.resolve(drawId);
       const packedTicket = convertUncheckedNumbersToLotteryTicket(combination);
       const contractAddress = this.contract.address.toLowerCase();
       const combinationId = `${contractAddress}_${resolvedDrawId.toString()}_${packedTicket.toHexString()}`;
@@ -683,7 +632,7 @@ class Lottery {
    * @param count The number of tickets to generate.
    * @returns The generated tickets.
    */
-  public async generateRandomTickets(count: number): Promise<Tickets> {
+  public generateRandomTickets(count: number): Tickets {
     return generateRandomTickets(count, this.selectionMax, this.selectionSize);
   }
 
