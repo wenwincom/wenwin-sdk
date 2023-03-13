@@ -1,8 +1,8 @@
 import { BigNumber } from 'ethers';
 import { ONE, ZERO } from '../constants';
 
-export type Ticket = Set<number>;
-export type Tickets = Array<Ticket>;
+export type TicketCombination = Set<number>;
+export type TicketCombinations = Array<TicketCombination>;
 
 /**
  * Checks if a set of numbers is a valid lottery ticket. The valid number range is [1, selectionMax].
@@ -11,7 +11,7 @@ export type Tickets = Array<Ticket>;
  * @param selectionMax Max number that can be selected.
  * @returns `true` if the ticket is valid, `false` otherwise.
  */
-export function isValidLotteryTicket(numbers: Ticket, selectionSize: number, selectionMax: number): boolean {
+export function isValidLotteryTicket(numbers: TicketCombination, selectionSize: number, selectionMax: number): boolean {
   return numbers.size === selectionSize && Array.from(numbers).every(n => n >= 1 && n <= selectionMax);
 }
 
@@ -20,7 +20,7 @@ export function isValidLotteryTicket(numbers: Ticket, selectionSize: number, sel
  * @param numbers A list of numbers for a ticket.
  * @returns A `BigNumber` representing the ticket.
  */
-export function convertUncheckedNumbersToLotteryTicket(numbers: Ticket): BigNumber {
+export function convertUncheckedNumbersToLotteryTicket(numbers: TicketCombination): BigNumber {
   return [...numbers].reduce((ticket, n) => ticket.or(ONE.shl(n - 1)), ZERO);
 }
 
@@ -33,7 +33,11 @@ export function convertUncheckedNumbersToLotteryTicket(numbers: Ticket): BigNumb
  * @throws Error if the ticket is invalid.
  * @see isValidLotteryTicket
  */
-export function convertNumbersToLotteryTicket(numbers: Ticket, selectionSize: number, selectionMax: number): BigNumber {
+export function convertNumbersToLotteryTicket(
+  numbers: TicketCombination,
+  selectionSize: number,
+  selectionMax: number,
+): BigNumber {
   if (!isValidLotteryTicket(numbers, selectionSize, selectionMax)) {
     throw new Error('convertNumbersToLotteryTicket: Invalid ticket');
   }
@@ -48,7 +52,7 @@ export function convertNumbersToLotteryTicket(numbers: Ticket, selectionSize: nu
  * @returns A set of numbers for a ticket.
  * @see convertNumbersToLotteryTicket
  */
-export function convertLotteryTicketToNumbers(ticket: BigNumber, selectionMax: number): Ticket {
+export function convertLotteryTicketToNumbers(ticket: BigNumber, selectionMax: number): TicketCombination {
   const numbers = new Set<number>();
   for (let i = 0; i < selectionMax; i++) {
     if (ticket.and(ONE.shl(i)).gt(0)) {
@@ -64,7 +68,7 @@ export function convertLotteryTicketToNumbers(ticket: BigNumber, selectionMax: n
  * @param selectionSize Total numbers to be selected.
  * @returns A set of numbers for a ticket.
  */
-export function generateRandomTicket(selectionSize: number, selectionMax: number): Ticket {
+export function generateRandomTicket(selectionSize: number, selectionMax: number): TicketCombination {
   const numbers = new Set<number>();
 
   while (numbers.size < selectionSize) {
@@ -81,8 +85,8 @@ export function generateRandomTicket(selectionSize: number, selectionMax: number
  * @param selectionSize Total numbers to be selected.
  * @returns Array of valid lottery tickets.
  */
-export function generateRandomTickets(count: number, selectionSize: number, selectionMax: number): Tickets {
-  const tickets = new Array<Ticket>();
+export function generateRandomTickets(count: number, selectionSize: number, selectionMax: number): TicketCombinations {
+  const tickets = new Array<TicketCombination>();
 
   for (let i = 0; i < count; ++i) {
     tickets.push(generateRandomTicket(selectionMax, selectionSize));

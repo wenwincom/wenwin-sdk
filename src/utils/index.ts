@@ -5,6 +5,6 @@ export {
   isValidLotteryTicket,
   generateRandomTicket,
   generateRandomTickets,
-  Ticket,
-  Tickets,
+  TicketCombination,
+  TicketCombinations,
 } from './ticket';
