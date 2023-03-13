@@ -237,15 +237,30 @@ class Lottery {
    * If a draw info is not available, it will not add it to the returned list. The function keeps the order of the draw
    * IDs.
    * @param drawIds The IDs of the draws.
+   * @param orderDirection The order of the draw IDs (`'asc'` for ascending, `'desc'` for descending direction).
+   * @param skip The number of draws to skip.
+   * @param limit The maximum number of draws to return.
    * @returns The draws' information.
    */
-  public async getDrawInfos(drawIds: PromiseOrValue<BigNumberish | BigNumberish[]>): Promise<LotteryDrawInfo[]> {
+  public async getDrawInfos(
+    drawIds: PromiseOrValue<BigNumberish | BigNumberish[]>,
+    orderDirection: 'asc' | 'desc' = 'asc',
+    skip = 0,
+    limit?: number,
+  ): Promise<LotteryDrawInfo[]> {
     const resolvedDrawIds = await Promise.resolve(drawIds);
     const checkedDrawIds = Array.isArray(resolvedDrawIds) ? resolvedDrawIds : [resolvedDrawIds];
+    const fetchLimit = limit ?? null;
     const data = await this.graphClient.request(
       gql`
-        query getWinningTicket($drawIds: [ID!]!) {
-          draws(where: { id_in: $drawIds }) {
+        query getWinningTicket($drawIds: [ID!]!, $orderDirection: String, $limit: Int, $skip: Int!) {
+          draws(
+            where: { id_in: $drawIds }
+            orderBy: "drawId"
+            orderDirection: $orderDirection
+            first: $limit
+            skip: $skip
+          ) {
             drawId
             scheduledTimestamp
             winningTicket
@@ -256,6 +271,9 @@ class Lottery {
       `,
       {
         drawIds: checkedDrawIds.map(drawId => `${this.contract.address.toLowerCase()}_${drawId.toString()}`),
+        orderDirection,
+        limit: fetchLimit,
+        skip,
       },
     );
 
