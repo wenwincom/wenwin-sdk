@@ -289,7 +289,7 @@ class Lottery {
             draw.prizesPerTier,
             BigNumber.from,
           ),
-          winningCombination: draw.winningTicket ? new Set(draw.winningCombination) : null,
+          winningCombination: draw.winningCombination ? new Set(draw.winningCombination) : null,
         } as LotteryDrawInfo),
     );
   }
@@ -347,7 +347,7 @@ class Lottery {
         gql`
           query getWinningTicket($drawId: ID!) {
             draw(id: $drawId) {
-              winningTicket
+              winningCombination
             }
           }
         `,
@@ -356,11 +356,11 @@ class Lottery {
         },
       );
 
-      if (!data.draw?.winningTicket) {
+      if (!data.draw?.winningCombination) {
         return null;
       }
 
-      return new Set(data.draw.winningTicket);
+      return new Set(data.draw.winningCombination);
     } catch (error) {
       console.error(error);
       return Promise.reject(error);
