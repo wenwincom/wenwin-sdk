@@ -208,7 +208,7 @@ class Lottery {
     this.minWinningTier = config.minWinningTier;
     this.contract = Lottery__factory.connect(config.contractAddress, signerOrProvider);
     this.graphClient = new GraphQLClient(config.subgraphUri);
-    this.rewardToken = ERC20__factory.connect(config.contractAddress, signerOrProvider);
+    this.rewardToken = ERC20__factory.connect(config.rewardTokenAddress, signerOrProvider);
     this.rewardTokenSymbol = config.rewardTokenSymbol;
     this.rewardTokenDecimals = config.rewardTokenDecimals;
     this.firstDrawDate = new Date(config.firstDrawTimestamp * 1000);
