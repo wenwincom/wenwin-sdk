@@ -70,7 +70,7 @@ export class LotteryTicketHistory {
   /**
    * The numbers on the ticket.
    */
-  public readonly combination: TicketCombination;
+  public readonly combination: TicketCombination | null;
 
   /**
    * The matched numbers for the ticket. This is only available if the draw has already been finalized.
@@ -94,7 +94,7 @@ export class LotteryTicketHistory {
   constructor(
     ticketId: BigNumber,
     draw: number,
-    combination: TicketCombination,
+    combination: TicketCombination | null,
     isClaimed: boolean,
     calculateReward: (winTier: number) => Promise<BigNumber>,
     drawWinningCombination: TicketCombination | null,
@@ -103,9 +103,10 @@ export class LotteryTicketHistory {
     this.ticketId = ticketId;
     this.draw = draw;
     this.combination = combination;
-    this.matchedNumbers = drawWinningCombination
-      ? new Set([...this.combination].filter(number => drawWinningCombination?.has(number)))
-      : null;
+    this.matchedNumbers =
+      drawWinningCombination && this.combination
+        ? new Set([...this.combination].filter(number => drawWinningCombination?.has(number)))
+        : null;
     this.isClaimed = isClaimed;
     this.calculateReward = calculateReward;
     this.lotteryMinWinningTier = lotteryMinWinningTier;
@@ -122,7 +123,7 @@ export class LotteryTicketHistory {
    * Whether the ticket is a jackpot winning ticket. This is only available if the draw has already been finalized.
    */
   public get isJackpotWinningTicket(): boolean {
-    return this.winTier !== null && this.winTier === this.combination.size;
+    return this.winTier !== null && this.combination !== null && this.winTier === this.combination.size;
   }
 
   /**
@@ -509,7 +510,7 @@ class Lottery {
         data.tickets.map(async (ticket: any) => {
           const ticketId = BigNumber.from(ticket.ticketId);
           const drawId = Number(ticket.draw.drawId);
-          const combination = convertLotteryTicketToNumbers(BigNumber.from(ticket.combination), this.selectionMax);
+          const combination = ticket.combination ? new Set(ticket.combination as number[]) : null;
           const winningCombinationForDraw = ticket.draw.winningCombination
             ? new Set(ticket.draw.winningCombination as number[])
             : null;
