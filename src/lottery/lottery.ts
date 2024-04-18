@@ -429,7 +429,7 @@ class Lottery {
     try {
       const checkedTicketsForDraws = Array.isArray(ticketsForDraws) ? ticketsForDraws : [ticketsForDraws];
       const drawIds = checkedTicketsForDraws.map(ticketForDraw =>
-        Promise.resolve(ticketForDraw.drawId).then(drawId => utils.parseEther(drawId.toString())),
+        Promise.resolve(ticketForDraw.drawId).then(drawId => drawId),
       );
       const packedTickets = checkedTicketsForDraws.map(ticketForDraw =>
         Promise.resolve(ticketForDraw.ticketNumbers).then(ticketNumbers =>
