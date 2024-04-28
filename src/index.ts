@@ -2,7 +2,7 @@ import Lottery from './lottery';
 
 export { Lottery };
 
-export { LotteryDrawInfo, LotteryTicketHistory, LotteryTicketStatus } from './lottery';
+export { LotteryDrawInfo, LotteryTicketHistory, LotteryTicketStatus, DrawStats, Player } from './lottery';
 export {
   convertNumbersToLotteryTicket,
   convertLotteryTicketToNumbers,

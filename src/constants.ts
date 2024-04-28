@@ -10,7 +10,7 @@ export const LOTTERY_7_35_CONFIG: LotteryConfig = {
   selectionMax: 35,
   minWinningTier: 3,
   contractAddress: '0xf180abf67f7d5a599fbf58ce1054b4329c750526',
-  subgraphUri: 'https://api.studio.thegraph.com/query/71803/wenwin-dev/v0.0.7',
+  subgraphUri: 'https://api.studio.thegraph.com/query/71803/wenwin-dev/v0.0.12',
   rewardTokenAddress: '0x38A89e90800e5945658E2c706f636d5A4AB92AE5',
   rewardTokenSymbol: 'TT',
   rewardTokenDecimals: LOTTERY_7_35_REWARD_TOKEN_DECIMALS,
