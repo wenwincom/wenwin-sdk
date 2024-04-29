@@ -164,6 +164,8 @@ interface PlayerResponse {
     numberOfWinningTickets: string;
     numberOfClaimedTickets: string;
     drawId: string;
+    amountWon: string;
+    amountClaimed: string;
   }[];
 }
 
@@ -172,6 +174,8 @@ export interface DrawStats {
   numberOfWinningTickets: number;
   numberOfClaimedTickets: number;
   drawId: number;
+  amountWon: BigNumber;
+  amountClaimed: BigNumber;
 }
 
 export class Player {
@@ -577,6 +581,8 @@ class Lottery {
               numberOfTickets
               numberOfWinningTickets
               numberOfClaimedTickets
+              amountWon
+              amountClaimed
               drawId
             }
           }
@@ -595,6 +601,8 @@ class Lottery {
           numberOfClaimedTickets: Number(drawStats.numberOfClaimedTickets),
           numberOfTickets: Number(drawStats.numberOfTickets),
           numberOfWinningTickets: Number(drawStats.numberOfWinningTickets),
+          amountClaimed: BigNumber.from(drawStats.amountClaimed),
+          amountWon: BigNumber.from(drawStats.amountWon),
         }),
       ),
     );
