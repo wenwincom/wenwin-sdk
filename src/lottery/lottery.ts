@@ -157,6 +157,37 @@ export class LotteryTicketHistory {
   }
 }
 
+interface PlayerResponse {
+  id: string;
+  drawStats: {
+    numberOfTickets: string;
+    numberOfWinningTickets: string;
+    numberOfClaimedTickets: string;
+    drawId: string;
+    amountWon: string;
+    amountClaimed: string;
+  }[];
+}
+
+export interface DrawStats {
+  numberOfTickets: number;
+  numberOfWinningTickets: number;
+  numberOfClaimedTickets: number;
+  drawId: number;
+  amountWon: BigNumber;
+  amountClaimed: BigNumber;
+}
+
+export class Player {
+  public walletAddress: string;
+  public drawStats: DrawStats[];
+
+  constructor(walletAddress: string, drawStats: DrawStats[]) {
+    this.walletAddress = walletAddress;
+    this.drawStats = drawStats;
+  }
+}
+
 /**
  * Represents a lottery ticket for a draw.
  * @property drawId The ID of the draw.
@@ -425,6 +456,10 @@ class Lottery {
     ticketsForDraws: LotteryTicketForDraw | LotteryTicketForDraw[],
     frontend: PromiseOrValue<string>,
     referrer: PromiseOrValue<string>,
+    onApproveStart?: () => void,
+    onApproveSuccess?: () => void,
+    onTransactionStart?: () => void,
+    onTransactionSuccess?: () => void,
   ) {
     try {
       const checkedTicketsForDraws = Array.isArray(ticketsForDraws) ? ticketsForDraws : [ticketsForDraws];
@@ -441,15 +476,19 @@ class Lottery {
       const totalTicketPrice = this.ticketPrice.mul(checkedTicketsForDraws.length);
 
       if (allowance.lt(totalTicketPrice)) {
+        onApproveStart?.();
         const approveTx = await this.rewardToken.approve(
           this.contract.address,
           this.ticketPrice.mul(packedTickets.length),
         );
         await approveTx.wait();
+        onApproveSuccess?.();
       }
 
+      onTransactionStart?.();
       const buyTicketsTx = await this.contract.buyTickets(drawIds, packedTickets, frontend, referrer);
       await buyTicketsTx.wait();
+      onTransactionSuccess?.();
     } catch (error) {
       console.error(error);
       return Promise.reject(error);
@@ -530,6 +569,43 @@ class Lottery {
       console.error(error);
       return Promise.reject(error);
     }
+  }
+
+  public async getPlayerStats(player: string): Promise<Player> {
+    const data = await this.graphClient.request<{ player: PlayerResponse }>(
+      gql`
+        query getPlayers($player: ID!) {
+          player(id: $player) {
+            id
+            drawStats {
+              numberOfTickets
+              numberOfWinningTickets
+              numberOfClaimedTickets
+              amountWon
+              amountClaimed
+              drawId
+            }
+          }
+        }
+      `,
+      {
+        player: player.toLowerCase(),
+      },
+    );
+
+    return new Player(
+      data.player.id,
+      data.player.drawStats.map(
+        (drawStats): DrawStats => ({
+          drawId: Number(drawStats.drawId),
+          numberOfClaimedTickets: Number(drawStats.numberOfClaimedTickets),
+          numberOfTickets: Number(drawStats.numberOfTickets),
+          numberOfWinningTickets: Number(drawStats.numberOfWinningTickets),
+          amountClaimed: BigNumber.from(drawStats.amountClaimed),
+          amountWon: BigNumber.from(drawStats.amountWon),
+        }),
+      ),
+    );
   }
 
   /**
